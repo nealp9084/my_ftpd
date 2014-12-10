@@ -35,6 +35,7 @@ public:
 
   void start() {
     printf("Accepting connections on port %d...\n", this->port);
+
     for (;;)
     {
       sockaddr_in sender;
