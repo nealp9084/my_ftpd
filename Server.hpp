@@ -15,7 +15,8 @@ Server.hpp: class for a FTP server
 
 class Server {
 public:
-  Server(uint16_t port_) : sct(-1), port(port_) {}
+  Server(uint16_t port_) : sct(-1), port(port_) {
+  }
 
   // bind and listen
   bool initialize() {

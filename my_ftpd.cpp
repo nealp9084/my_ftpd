@@ -9,7 +9,7 @@ my_ftpd.cpp: FTP server program
 
 void usage(char const* program_name) {
   std::cerr << "Usage: " << program_name << " <port>" << std::endl;
-  std::cerr << "<port>: a valid and available port number" << std::endl;
+  std::cerr << "<port>: a valid and *available* port number" << std::endl;
   exit(1);
 }
 

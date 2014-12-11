@@ -245,7 +245,7 @@ private:
       return false;
     }
 
-    respond_with(std::string("257 \"") + this->cwd + "\"");
+    respond_with(std::string("257 \"") + this->fakify(this->_get_cwd()) + "\"");
     return true;
   }
 
@@ -392,8 +392,13 @@ private:
     }
 
     if (this->_mkdir(path)) {
-      std::string new_path = this->_get_abspath(path);
-      respond_with(std::string("257 \"") + new_path + "\" directory created");
+      std::string new_path;
+      if (path[0] == '/') {
+	new_path = this->_get_abspath(this->real_root+path);
+      } else {
+	new_path = this->_get_abspath(path);
+      }
+      respond_with(std::string("257 \"") + fakify(new_path) + "\" directory created");
       return true;
     } else {
       respond_with_code(550);
@@ -581,7 +586,7 @@ private:
     }
 
     // the file we want to write on the server
-    int fdout = open(filename.c_str(), O_WRONLY);
+    int fdout = creat(filename.c_str(), 0644);
 
     if (fdout == -1) {
       respond_with_code(450);
@@ -670,22 +675,53 @@ private:
   }
 
   // wrapper method
-  bool _chroot(std::string const& path) const {
-    return chroot(path.c_str()) == 0;
-  }
-
-  // wrapper method
   std::string _get_cwd() const {
     char tmp[PATH_MAX + 1] { };
     getcwd(tmp, PATH_MAX + 1);
     return tmp;
   }
 
-  // wrapper method
+  bool begins_with(std::string const& input, std::string const& match) const {
+    return input.size() >= match.size() &&
+      std::equal(match.begin(), match.end(), input.begin());
+  }
+
+  // "fakify" a path (long path -> short path)
+  std::string fakify(std::string const& path) const {
+    if (path.empty()) {
+      return "/";
+    }
+
+    if (path == this->real_root) {
+      return "/";
+    }
+
+    if (!this->begins_with(path, this->real_root)) {
+      return "/";
+    }
+
+    return path.substr(this->real_root.length(), std::string::npos);
+  }
+
+  // wrapper method, with sandboxing
   bool _set_cwd(std::string const& path) {
+    if (path.empty()) {
+      return false;
+    }
+
+    std::string old_cwd(this->_get_cwd());
+
     if (chdir(path.c_str()) == 0) {
-      cwd = this->_get_cwd();
-      return true;
+      std::string new_cwd(this->_get_cwd());
+
+      // check if the new directory is outside our namespace:
+      // does the new cwd start with the root dir? if not, go back
+      if (this->begins_with(new_cwd, this->real_root)) {
+	return true;
+      } else {
+	chdir(old_cwd.c_str());
+	return false;
+      }
     } else {
       return false;
     }
@@ -693,16 +729,54 @@ private:
 
   // wrapper method
   bool _rmdir(std::string const& path) const {
-    return rmdir(path.c_str()) == 0;
+    if (path.empty()) {
+      return false;
+    }
+
+    // handle absolute paths
+    if (path[0] == '/') {
+      std::string new_path = this->real_root + path;
+      return rmdir(path.c_str()) == 0;
+    } else {
+      std::string abs_path = this->_get_abspath(path);
+
+      // only delete things inside the namespace
+      if (this->begins_with(abs_path, this->real_root)) {
+	return rmdir(path.c_str()) == 0;
+      } else {
+	return false;
+      }
+    }
   }
 
   // wrapper method
   bool _mkdir(std::string const& path) const {
-    return mkdir(path.c_str(), S_IRWXU) == 0;
+    if (path.empty()) {
+      return false;
+    }
+
+    // handle absolute paths
+    if (path[0] == '/') {
+      std::string new_path = this->real_root + path;
+      return mkdir(new_path.c_str(), S_IRWXU) == 0;
+    } else {
+      std::string abs_path = this->_get_abspath(path);
+
+      // only create things inside the namespace
+      if (this->begins_with(abs_path, this->real_root)) {
+	return mkdir(path.c_str(), S_IRWXU) == 0;
+      } else {
+	return false;
+      }
+    }
   }
 
   // wrapper method
-  std::string _get_abspath(std::string const& path) {
+  std::string _get_abspath(std::string const& path) const {
+    if (path.empty()) {
+      return std::string();
+    }
+
     char tmp[PATH_MAX + 1] { };
     realpath(path.c_str(), tmp);
     return tmp;
@@ -710,16 +784,10 @@ private:
 
   // the only constructor
   explicit Session(int fd_, sockaddr_in& sender_) :
-    running(true), fd(fd_), sender(sender_), logged_in(false),
-    current_type('A'), current_mode('S'), current_structure('F'),
-    data_port(0), data_connected(false), data_fd(-1) {
-    // attempt to jail the current process
-    if (this->_chroot(".")) {
-      this->_set_cwd("/");
-    } else {
-      // chroot failed! native sandboxing not available... oh well
-      this->_set_cwd(".");
-    }
+    fd(fd_), sender(sender_), running(true), current_type('A'),
+    current_mode('S'), current_structure('F'), logged_in(false),
+    data_connected(false), data_port(0), data_fd(-1),
+    real_root(_get_abspath(".")) {
   }
 
   // clean up resources
@@ -729,13 +797,13 @@ private:
     }
 
     this->_data_disconnect();
+    this->_set_cwd(this->real_root);
   }
 
   int fd;
   sockaddr_in sender;
 
   bool running;
-  std::string cwd;
 
   char current_type;
   char current_mode;
@@ -748,6 +816,8 @@ private:
   int data_port;
   int data_fd;
   sockaddr_in data_si;
+
+  std::string real_root;
 };
 
 #endif
