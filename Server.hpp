@@ -1,3 +1,8 @@
+/*
+Neal Patel (nap7jz)
+12/10/2014
+Server.hpp: class for a FTP server
+*/
 #ifndef SERVER_HPP
 #define SERVER_HPP 1
 
@@ -6,13 +11,13 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <algorithm>
-#include <thread>
 #include "Session.hpp"
 
 class Server {
 public:
   Server(uint16_t port_) : sct(-1), port(port_) {}
 
+  // bind and listen
   bool initialize() {
     this->sct = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -33,23 +38,21 @@ public:
     return (listen(this->sct, SOMAXCONN) != 1);
   }
 
+  // accept connections on a single thread (this method never returns)
   void start() {
-    printf("Accepting connections on port %d...\n", this->port);
-
     for (;;)
     {
       sockaddr_in sender;
       socklen_t len = sizeof(sockaddr_in);
       int fd = accept(this->sct, (sockaddr*)&sender, &len);
 
-      if (fd != -1)
-      {
-	std::thread thrd(&Session::create_session, fd, sender);
-	thrd.detach();
+      if (fd != -1) {
+	Session::create_session(fd, sender);
       }
     }
   }
 
+  // cleanup
   virtual ~Server() {
     if (this->sct != -1) {
       close(this->sct);

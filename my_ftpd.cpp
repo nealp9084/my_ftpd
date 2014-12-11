@@ -1,3 +1,8 @@
+/*
+Neal Patel (nap7jz)
+12/10/2014
+my_ftpd.cpp: FTP server program
+*/
 #include <iostream>
 #include <cstdlib>
 #include "Server.hpp"
